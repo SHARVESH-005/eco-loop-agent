@@ -1,0 +1,10 @@
+eppy>=0.5.63
+google-generativeai>=0.8.0
+mcp>=1.0.0
+plotly>=5.18.0
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+pandas>=2.1.0
+numpy>=1.24.0
+pythermalcomfort>=2.8.0
+python-dotenv>=1.0.0
