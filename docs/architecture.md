@@ -6,14 +6,14 @@ Eco-Loop is an autonomous building energy optimization system that creates a clo
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CLOSED-LOOP CONTROL PIPELINE                  │
-│                                                                  │
+│                    CLOSED-LOOP CONTROL PIPELINE                 │
+│                                                                 │
 │   ┌──────────────┐   FEEDBACK    ┌──────────────────────────┐   │
 │   │  BUILDING    │──────────────▶│  MCP SERVER              │   │
-│   │  SIMULATOR   │  (sensor      │  (Tool Interface Layer)   │   │
+│   │  SIMULATOR   │  (sensor      │  (Tool Interface Layer)  │   │
 │   │  (EnergyPlus │   data)       │                          │   │
 │   │   Physics)   │               │  ┌────────────────────┐  │   │
-│   │              │   CONTROL     │  │ read_building_      │  │   │
+│   │              │   CONTROL     │  │ read_building_     │  │   │
 │   │  • 5 Zones   │◀─────────────│  │   sensors()        │  │   │
 │   │  • HVAC      │  (setpoints,  │  │ calculate_pmv()    │  │   │
 │   │  • Lighting  │   schedules)  │  │ set_thermostat_    │  │   │
@@ -29,20 +29,20 @@ Eco-Loop is an autonomous building energy optimization system that creates a clo
 │                                  │  │ log_decision()     │  │   │
 │                                  │  └────────┬───────────┘  │   │
 │                                  └───────────┼──────────────┘   │
-│                                              │                   │
+│                                              │                  │
 │                                    ┌─────────▼─────────┐        │
 │                                    │  GEMINI 2.0 FLASH │        │
-│                                    │  (Cognitive Engine)│        │
-│                                    │                    │        │
-│                                    │  • Tool Calling    │        │
-│                                    │  • Reasoning       │        │
-│                                    │  • Decision Making │        │
-│                                    └────────────────────┘        │
-│                                                                  │
+│                                    │  (Cognitive Engine)│       │
+│                                    │                    │       │
+│                                    │  • Tool Calling    │       │
+│                                    │  • Reasoning       │       │
+│                                    │  • Decision Making │       │
+│                                    └────────────────────┘       │
+│                                                                 │
 │   ┌──────────────────────────────────────────────────────────┐  │
-│   │              DATA LOGGER → DASHBOARD                      │  │
-│   │  baseline_results.csv | optimized_results.csv             │  │
-│   │  agent_decisions.log  | Plotly Dash Visualization          │  │
+│   │              DATA LOGGER → DASHBOARD                     │  │
+│   │  baseline_results.csv | optimized_results.csv            │  │
+│   │  agent_decisions.log  | Plotly Dash Visualization        │  │
 │   └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
