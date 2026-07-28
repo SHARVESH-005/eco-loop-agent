@@ -6,7 +6,7 @@ An autonomous closed-loop control system that pairs physics-based building simul
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 - Python 3.10+
@@ -118,5 +118,5 @@ eco-loop-agent/
 
 ---
 
-## 📜 License
+##  License
 MIT — Honeywell OA Hackathon 2026
