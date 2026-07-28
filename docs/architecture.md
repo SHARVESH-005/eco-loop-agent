@@ -1,166 +1,205 @@
 # Eco-Loop Building Agent — System Architecture
 
-## 1. System Overview
+---
 
-Eco-Loop is an autonomous building energy optimization system that creates a closed-loop control pipeline between a physics-based building simulator and an AI cognitive engine.
+## Overview
+
+Eco-Loop is an autonomous building energy optimization system that implements a closed-loop control pipeline between a physics-based building simulator and an AI cognitive engine. The agent continuously senses the simulated building, reasons about energy and comfort trade-offs, and issues control actions to minimize energy consumption while maintaining occupant thermal comfort.
+
+Key goals:
+- Maintain Predicted Mean Vote (PMV) within [-0.5, +0.5]
+- Minimize building energy consumption and peak demand
+- Use predictive strategies (pre-cooling, load shifting) and carbon-aware control
+
+---
+
+## 1 System Architecture (High-level)
+
+The system is composed of three main components:
+
+- Simulator: physics-based building model (5 thermal zones, HVAC, lighting, weather)
+- MCP Server: typed tool interface that exposes building and utility functions
+- Cognitive Engine: Google Gemini 2.0 Flash (LLM) that reasons and calls tools
+- Orchestrator: coordinates simulation timesteps and the tool-calling loop
+- Dashboard / Data Logger: stores results and visualizes performance
+
+
+Simple diagram (conceptual):
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    CLOSED-LOOP CONTROL PIPELINE                 │
-│                                                                 │
-│   ┌──────────────┐   FEEDBACK    ┌──────────────────────────┐   │
-│   │  BUILDING    │──────────────▶│  MCP SERVER              │   │
-│   │  SIMULATOR   │  (sensor      │  (Tool Interface Layer)  │   │
-│   │  (EnergyPlus │   data)       │                          │   │
-│   │   Physics)   │               │  ┌────────────────────┐  │   │
-│   │              │   CONTROL     │  │ read_building_     │  │   │
-│   │  • 5 Zones   │◀─────────────│  │   sensors()        │  │   │
-│   │  • HVAC      │  (setpoints,  │  │ calculate_pmv()    │  │   │
-│   │  • Lighting  │   schedules)  │  │ set_thermostat_    │  │   │
-│   │  • Weather   │               │  │   setpoint()       │  │   │
-│   └──────────────┘               │  │ adjust_lighting_   │  │   │
-│                                  │  │   schedule()       │  │   │
-│                                  │  │ analyze_energy_    │  │   │
-│                                  │  │   pattern()        │  │   │
-│                                  │  │ get_grid_carbon_   │  │   │
-│                                  │  │   intensity()      │  │   │
-│                                  │  │ get_weather_       │  │   │
-│                                  │  │   forecast()       │  │   │
-│                                  │  │ log_decision()     │  │   │
-│                                  │  └────────┬───────────┘  │   │
-│                                  └───────────┼──────────────┘   │
-│                                              │                  │
-│                                    ┌─────────▼─────────┐        │
-│                                    │  GEMINI 2.0 FLASH │        │
-│                                    │  (Cognitive Engine)│       │
-│                                    │                    │       │
-│                                    │  • Tool Calling    │       │
-│                                    │  • Reasoning       │       │
-│                                    │  • Decision Making │       │
-│                                    └────────────────────┘       │
-│                                                                 │
-│   ┌──────────────────────────────────────────────────────────┐  │
-│   │              DATA LOGGER → DASHBOARD                     │  │
-│   │  baseline_results.csv | optimized_results.csv            │  │
-│   │  agent_decisions.log  | Plotly Dash Visualization        │  │
-│   └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
++-------------------+       +----------------+       +--------------------+
+|   BUILDING        |  -->  |   MCP SERVER   |  <--> |  COGNITIVE ENGINE  |
+|   SIMULATOR       |       | (tool layer)   |       | (Gemini 2.0 Flash) |
+| (physics engine)  |  <--  |                |       |  • tool calling    |
++-------------------+       +----------------+       +--------------------+
+         |   ^                     |   ^                    |
+         |   |   control/actions   |   |   function calls    |
+         v   |                     v   |                    v
++-------------------+       +----------------+       +--------------------+
+|   DATA LOGGER     |       |  ORCHESTRATOR  |       |   DASHBOARD (UI)   |
+| (CSV / JSONL / DB)|       | (loop manager) |       |  (Plotly Dash)     |
++-------------------+       +----------------+       +--------------------+
 ```
 
-## 2. Tool-Calling Architecture
+---
 
-### 2.1 Protocol Design
-We implement the **Model Context Protocol (MCP)** pattern where:
-- The **MCP Server** exposes 8 typed tools as function declarations
-- **Google Gemini 2.0 Flash** acts as the cognitive engine with native function calling
-- The **Orchestrator** manages the simulation-reasoning-control loop
+## 2 Tool-Calling Architecture
 
-### 2.2 Tool Execution Flow
-```
-1. Orchestrator runs simulation timestep
-2. Sensor data pushed to MCP Server shared state
-3. Orchestrator sends timestep prompt to Gemini
-4. Gemini analyzes prompt → decides to call tools
-5. Gemini returns function_call(s)
-6. Orchestrator executes tools via MCP Server
-7. Results sent back to Gemini
-8. Gemini provides final analysis + control decisions
-9. Orchestrator extracts pending actions from MCP Server
-10. Actions applied to next simulation timestep
-```
+### 2.1 Model Context Protocol (MCP)
+
+We follow the Model Context Protocol (MCP) pattern:
+- MCP Server exposes typed function-like tools (stable signatures, typed inputs/outputs)
+- Gemini uses native function/tool-calling to request sensor reads, analytics, and actuations
+- The Orchestrator mediates: runs simulation timesteps, pushes sensor state, invokes Gemini, executes actions
+
+
+### 2.2 Execution Flow
+
+1. Orchestrator steps the simulator by one timestep
+2. Sensor data is pushed to MCP Server shared state
+3. Orchestrator sends a structured timestep prompt to Gemini
+4. Gemini analyzes inputs and may return function_call(s)
+5. Orchestrator executes requested tools via the MCP Server
+6. Results are returned to Gemini; Gemini returns final analysis + control recommendations
+7. Orchestrator extracts pending actions and applies them to the next timestep
+
 
 ### 2.3 Tool Definitions
 
-| Tool | Purpose | Input | Output |
-|------|---------|-------|--------|
-| `read_building_sensors` | Get real-time zone data | zone_name | JSON: temps, humidity, PMV, energy |
-| `calculate_pmv` | Thermal comfort index | temp, humidity, air_speed | PMV value + comfort status |
-| `analyze_energy_pattern` | Trend detection | n_steps | Trend direction + insights |
-| `set_thermostat_setpoint` | HVAC control | zone, heating_sp, cooling_sp | Confirmation |
-| `adjust_lighting_schedule` | Lighting control | zone, fraction | Confirmation + savings |
-| `get_grid_carbon_intensity` | Carbon signal | hour | gCO₂/kWh + recommendation |
-| `get_weather_forecast` | Predictive control | hours_ahead | Forecast array |
-| `log_decision` | Audit trail | reasoning, action, impact | Log confirmation |
+| Tool name | Purpose | Inputs | Output |
+|-----------|---------|--------|--------|
+| `read_building_sensors` | Read real-time zone telemetry | zone_name | JSON `{ temps, humidity, pmv, energy }` |
+| `calculate_pmv` | Calculate thermal comfort index | `{temp, humidity, air_speed}` | PMV value + comfort status |
+| `analyze_energy_pattern` | Summarize recent trends | `n_steps` | Trend direction + insights |
+| `set_thermostat_setpoint` | Issue HVAC setpoint changes | `{zone, heating_sp, cooling_sp}` | Confirmation |
+| `adjust_lighting_schedule` | Update lighting fractions/schedules | `{zone, fraction}` | Confirmation + estimated savings |
+| `get_grid_carbon_intensity` | Fetch carbon signal | `hour` | `gCO2/kWh` + recommendation |
+| `get_weather_forecast` | Forecasted weather | `hours_ahead` | Forecast array |
+| `log_decision` | Append audit trail entry | `{reasoning, action, impact}` | Log confirmation |
 
-## 3. Prompt Engineering Strategy
+Notes:
+- Tool inputs/outputs use compact JSON-friendly structures to keep prompts concise.
+- All tool calls are logged to the Decision Log (JSONL) for offline analysis and auditing.
 
-### 3.1 System Prompt
-The system prompt establishes the agent's identity, mission, available tools, control strategy guidelines, and safety constraints. Key elements:
-- **Role**: Autonomous Building Energy Optimization Agent
-- **Objective**: Minimize energy while maintaining PMV [-0.5, +0.5]
-- **Strategy**: Occupation-aware setbacks, pre-cooling, daylight harvesting, peak demand response
-- **Constraints**: Temperature bounds, deadband requirements, comfort limits
+---
 
-### 3.2 Per-Timestep Prompt
-Each hour, the agent receives a structured data injection containing:
-- Current weather conditions (outdoor temp, humidity, solar radiation)
-- Zone status table (temperature, humidity, PMV, HVAC mode, occupancy)
-- Energy metrics (HVAC, lighting, equipment, total kWh)
+## 3 Prompting Strategy
+
+### System prompt (agent identity & constraints)
+The system prompt defines the agent mission, available tools, safety constraints, and control objectives. Highlights:
+- Role: Autonomous Building Energy Optimization Agent
+- Objective: Minimize energy while keeping PMV within [-0.5, +0.5]
+- Strategy primitives: occupancy-aware setbacks, pre-cooling, daylight harvesting, peak demand reduction
+- Safety constraints: temperature bounds, deadband rules, override on critical alarms
+
+
+### Per-timestep prompt (hourly)
+Each timestep prompt contains a compact structured payload:
+- Current weather (outdoor temp, humidity, solar radiation)
+- Zone status table: `zone, temp, humidity, pmv, hvac_mode, occupancy`
+- Energy metrics: HVAC, lighting, equipment, total (kWh)
 - Cumulative savings vs baseline
 - Carbon intensity signal
 
-### 3.3 Strategy Review Prompt
-Every 6 timesteps, a higher-level review prompt asks the agent to:
-- Evaluate overall performance trends
-- Identify zones with persistent comfort issues
-- Consider predictive strategies (pre-cooling, load shifting)
-- Adjust the global strategy if needed
+To reduce latency and token usage we:
+- Call the LLM hourly (batching strategy)
+- Round numeric values and use abbreviated zone names
+- Keep a 12-hour sliding window and summarize older history
 
-## 4. Prompt Latency Management
+
+### Strategy review (every 6 timesteps)
+A higher-level checkpoint where the agent:
+- Reviews performance trends
+- Flags zones with persistent comfort deviations
+- Suggests strategy-level adjustments (e.g., tighten setbacks, change pre-cool windows)
+
+---
+
+## 4 Latency & Context Management
 
 | Strategy | Implementation |
-|----------|---------------|
-| **Batch Processing** | LLM called every hour (not every minute), amortizing inference cost |
-| **Compact Data Format** | Structured JSON with abbreviated zone names, rounded values |
-| **Sliding Window** | Only last 12 hours kept in context; older data summarized |
-| **Session Reset** | Chat history reset every 24 simulated hours to prevent context overflow |
-| **Key Rotation** | 3 API keys with automatic failover on rate limits |
-| **Reduced Calls** | Unoccupied hours: LLM called every 3 hours instead of every hour |
+|---|---|
+| Batch processing | Call LLM every hour; reduce frequency during unoccupied periods |
+| Compact data format | Structured JSON + rounded values to save tokens |
+| Sliding window | Keep last 12 timesteps in full detail; summarize older data |
+| Session reset | Reset chat context every 24 simulated hours to avoid context bloat |
+| Key rotation | Cycle through 3 API keys for rate-limit resilience |
+| Reduced calls when unoccupied | LLM every 3 hours when building is empty |
 
-## 5. Handling Lengthy Simulation Logs
+---
 
-| Challenge | Solution |
-|-----------|----------|
-| Large CSV outputs | Only parse relevant columns (temps, energy, PMV) |
-| Growing history | Sliding window: keep last 12 timesteps, drop older |
-| Decision log growth | Separate log file (JSONL), only recent 5 shown to LLM |
-| Trend analysis | `analyze_energy_pattern` tool summarizes N timesteps into one insight |
-| Multi-zone data | Compact tabular format in prompt, not raw JSON dump |
+## 5 Handling Large Logs & Outputs
 
-## 6. Building Simulation Model
+Challenges and solutions:
+- Large CSVs: only parse and keep relevant columns (temps, energy, PMV)
+- Growing history: sliding window + periodic summaries
+- Decision log growth: secondary JSONL file with recent N entries exposed to the LLM
+- Trend analysis: use `analyze_energy_pattern` to condense N timesteps into one insight
+- Multi-zone verbosity: present compact tabular summaries rather than raw dumps
 
-### 6.1 DOE Small Office Reference Building
-- **Location**: Chicago, IL (ASHRAE Climate Zone 5A)
-- **5 Thermal Zones**: North/East/South/West Perimeter + Core
-- **HVAC**: Packaged Single Zone (PSZ) with gas heating, DX cooling
-- **Baseline**: ASHRAE 90.1-2019 compliant schedules
+---
 
-### 6.2 Physics Model
-- RC thermal network (resistance-capacitance) for zone heat balance
-- Solar heat gain with orientation-dependent SHGC
-- Internal gains: occupancy-scheduled people, lighting, equipment loads
-- HVAC energy: COP-based cooling (3.5), gas heating efficiency (0.9)
+## 6 Building Simulation Model
+
+### Reference building
+- DOE Small Office (Chicago, IL — ASHRAE Climate Zone 5A)
+- 5 thermal zones: North / East / South / West perimeter + Core
+- HVAC: Packaged single-zone (PSZ) with gas heating and DX cooling
+- Baseline schedules: ASHRAE 90.1-2019
+
+
+### Physics model
+- RC thermal network per zone (resistance-capacitance heat balance)
+- Orientation-dependent solar gains (SHGC)
+- Internal gains: scheduled occupants, lighting, equipment
+- HVAC efficiencies: cooling COP ≈ 3.5, gas heating eff ≈ 0.9
 - Infiltration: 0.3 ACH
 
-## 7. Energy Conservation Measures (ECMs)
+---
 
-The AI agent applies these ECMs dynamically:
+## 7 Energy Conservation Measures (ECMs)
 
-1. **Thermostat Setback** — Widen deadband during unoccupied hours
-2. **Optimal Start/Stop** — Pre-condition building before occupancy
-3. **Daylight Harvesting** — Reduce lighting in perimeter zones with high solar
-4. **Demand Response** — Reduce loads during high carbon intensity periods
-5. **Zone-Specific Tuning** — Different setpoints per zone based on orientation/load
-6. **Thermal Mass Exploitation** — Pre-cool during cheap/clean energy periods
+The agent dynamically applies these ECMs:
+1. Thermostat setback during unoccupied hours
+2. Optimal start/stop (pre-conditioning before occupancy)
+3. Daylight harvesting (reduce perimeter lighting when solar gains suffice)
+4. Demand response (reduce loads during high-carbon or high-price periods)
+5. Zone-specific tuning (per-orientation setpoints)
+6. Thermal mass exploitation (pre-cool when energy is cheap/clean)
 
-## 8. Technology Stack
+---
 
-| Component | Technology | Version |
-|-----------|-----------|---------|
-| Language | Python | 3.10+ |
-| Simulation | Custom physics engine (EnergyPlus-grade) | - |
-| LLM | Google Gemini 2.0 Flash | via API |
-| Protocol | Model Context Protocol (MCP) | 1.0 |
-| Dashboard | Plotly Dash + Bootstrap | 2.14+ |
-| Comfort | pythermalcomfort (ISO 7730 PMV/PPD) | 2.8+ |
-| Data | pandas, numpy | - |
+## 8 Technology Stack
+
+| Component | Technology | Notes |
+|---|---:|---|
+| Language | Python | 3.10+
+| Simulation | Custom physics engine | EnergyPlus-grade model
+| LLM | Google Gemini 2.0 Flash | via API, native function calling
+| Protocol | Model Context Protocol (MCP) | Typed tool interfaces
+| Dashboard | Plotly Dash + Bootstrap | Interactive visualizations
+| Comfort | pythermalcomfort | ISO 7730 PMV/PPD calculations
+| Data | pandas, numpy | core data processing
+
+---
+
+## 9 Observability & Logs
+
+- Decision Log: JSONL capturing {timestamp, reasoning, tool_calls, actions, expected_impact}
+- Results CSVs: `baseline_results.csv`, `optimized_results.csv`
+- Dashboard: real-time and historical visualizations (Plotly Dash)
+
+---
+
+## 10 Next Steps / Recommendations
+
+- Add a sequence diagram (PlantUML or Mermaid) for the MCP call flow in docs/assets or README
+- Create unit and integration tests around MCP tool contracts
+- Add a reproducible example notebook that runs a short simulation and shows agent decisions
+
+---
+
+If you want, I can also:
+- Add a Mermaid sequence diagram and embed it in the doc
+- Generate a PlantUML image and add it to docs/assets
+- Create a short example notebook that demonstrates a single control loop
