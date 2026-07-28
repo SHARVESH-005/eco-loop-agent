@@ -63,7 +63,7 @@ EnergyPlus Simulation ←──→ MCP Server (8 Tools) ←──→ Gemini 2.0 
 | Total Energy | ~X kWh | ~Y kWh | ~15-22% |
 | HVAC Energy | ~X kWh | ~Y kWh | ~20-30% |
 | Carbon Emissions | ~X kg | ~Y kg | ~18-25% |
-| Comfort (PMV) | Fixed | Adaptive | ✅ Maintained |
+| Comfort (PMV) | Fixed | Adaptive |  Maintained |
 
 ---
 
