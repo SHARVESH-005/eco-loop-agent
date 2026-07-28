@@ -1,4 +1,4 @@
-# 🏢 Eco-Loop Building Agent 🌿
+#  Eco-Loop Building Agent 
 
 **AI-Driven Autonomous Building Energy Optimization**
 
@@ -36,7 +36,7 @@ python main.py --verbose            # Detailed output
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 EnergyPlus Simulation ←──→ MCP Server (8 Tools) ←──→ Gemini 2.0 Flash
@@ -56,7 +56,7 @@ EnergyPlus Simulation ←──→ MCP Server (8 Tools) ←──→ Gemini 2.0 
 
 ---
 
-## 📊 Key Results
+##  Key Results
 
 | Metric | Baseline | AI-Optimized | Savings |
 |--------|----------|--------------|---------|
@@ -67,7 +67,7 @@ EnergyPlus Simulation ←──→ MCP Server (8 Tools) ←──→ Gemini 2.0 
 
 ---
 
-## 🔧 MCP Tools
+##  MCP Tools
 
 | Tool | Purpose |
 |------|---------|
@@ -82,7 +82,7 @@ EnergyPlus Simulation ←──→ MCP Server (8 Tools) ←──→ Gemini 2.0 
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 ```
 eco-loop-agent/
 ├── main.py                    # Closed-loop orchestrator
@@ -107,7 +107,7 @@ eco-loop-agent/
 
 ---
 
-## 🛠️ Technology Stack & Compliance
+##  Technology Stack & Compliance
 - **Simulation**: Real EnergyPlus V26.1 integration + custom high-fidelity RC thermal dynamics engine
 - **Building Model**: DOE Small Office Reference Building (Chicago, IL) with TMY3 weather profile
 - **AI Cognitive Engine**: Google Gemini 2.0 Flash via API (Modular tool-calling architecture drop-in compatible with local Open-Source LLMs like Llama 3, Mistral 7B, or Qwen 2.5 via vLLM/Ollama)
